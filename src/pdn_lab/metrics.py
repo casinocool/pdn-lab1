@@ -5,7 +5,7 @@ from collections import Counter
 from sklearn.metrics import classification_report, f1_score
 
 from .data import dataset_statistics
-from .schema import ATTRIBUTES, BIO_LABELS, Entity, entities_of, to_bio
+from .schema import ATTRIBUTES, Entity, entities_of, to_bio
 
 
 def _score(tp: int, fp: int, fn: int) -> dict:
@@ -15,11 +15,11 @@ def _score(tp: int, fp: int, fn: int) -> dict:
     return {"precision": precision, "recall": recall, "f1": f1, "support": tp + fn, "tp": tp, "fp": fp, "fn": fn}
 
 
-def evaluate_predictions(records: list[dict], predictions: list[list[Entity]]) -> dict:
+def evaluate_predictions(records: list[dict], predictions: list[list[Entity]], attributes=ATTRIBUTES) -> dict:
     if len(records) != len(predictions) or not records:
         raise ValueError("Оценка требует непустые тексты и по одному предсказанию на каждый текст")
     true_tags, predicted_tags = [], []
-    counts = {label: Counter() for label in ATTRIBUTES}
+    counts = {label: Counter() for label in attributes}
     error_examples = []
     for record, predicted in zip(records, predictions):
         gold = entities_of(record)
@@ -28,7 +28,7 @@ def evaluate_predictions(records: list[dict], predictions: list[list[Entity]]) -
         true_tags.extend(expected)
         predicted_tags.extend(actual)
         gold_set, predicted_set = set(gold), set(predicted)
-        for label in ATTRIBUTES:
+        for label in attributes:
             expected_set = {e for e in gold_set if e.label == label}
             actual_set = {e for e in predicted_set if e.label == label}
             counts[label].update(tp=len(expected_set & actual_set), fp=len(actual_set - expected_set), fn=len(expected_set - actual_set))
@@ -40,20 +40,20 @@ def evaluate_predictions(records: list[dict], predictions: list[list[Entity]]) -
     entity_weighted = sum(score["f1"] * score["support"] for score in entity_scores.values()) / total_support if total_support else 0.0
     # O исключён только из списка классов усреднения. Все исходные токены сохранены,
     # поэтому предсказанная ПДн на месте O увеличивает FP соответствующего класса.
-    labels = list(BIO_LABELS[1:])
+    labels = [f"{prefix}-{label}" for label in attributes for prefix in ("B", "I")]
     result = {
         "token_weighted_f1_without_o": float(f1_score(true_tags, predicted_tags, labels=labels, average="weighted", zero_division=0)),
-        "token_weighted_f1_with_o": float(f1_score(true_tags, predicted_tags, labels=list(BIO_LABELS), average="weighted", zero_division=0)),
+        "token_weighted_f1_with_o": float(f1_score(true_tags, predicted_tags, labels=["O", *labels], average="weighted", zero_division=0)),
         "token_bio_report": classification_report(true_tags, predicted_tags, labels=labels, output_dict=True, zero_division=0),
         "strict_entity_micro": _score(**totals),
         "strict_entity_weighted_f1": entity_weighted,
         "strict_entities_by_attribute": entity_scores,
-        "dataset": dataset_statistics(records),
+        "dataset": dataset_statistics(records, attributes),
         "error_examples": error_examples,
     }
     true_types = [tag.split("-",1)[-1] for tag in true_tags]
     predicted_types = [tag.split("-",1)[-1] for tag in predicted_tags]
-    result["token_attribute_report"] = classification_report(true_types, predicted_types, labels=list(ATTRIBUTES), output_dict=True, zero_division=0)
+    result["token_attribute_report"] = classification_report(true_types, predicted_types, labels=list(attributes), output_dict=True, zero_division=0)
     return result
 
 

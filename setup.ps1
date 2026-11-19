@@ -19,7 +19,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Не удалось установить PyTorch." }
     & $ProjectPython -m pip install -e ".[model,dev]"
     if ($LASTEXITCODE -ne 0) { throw "Не удалось установить проект." }
-    Write-Host "Окружение готово. Следующий шаг: .\.venv\Scripts\python.exe -m pdn_lab prepare"
+    Write-Host "Окружение готово. Для автоматического распознавания скачайте модель командой .\.venv\Scripts\python.exe scripts/download_model.py"
 } finally {
     Pop-Location
 }

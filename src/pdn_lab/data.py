@@ -214,12 +214,12 @@ def import_factrueval(archive: Path, seed: int) -> tuple[dict[str, list[dict]], 
     return splits, exclusions
 
 
-def dataset_statistics(records: list[dict]) -> dict:
+def dataset_statistics(records: list[dict], attributes=ATTRIBUTES) -> dict:
     texts, entities = Counter(), Counter()
     for record in records:
         entities.update(entity[0] for entity in record["entities"])
         texts.update({entity[0] for entity in record["entities"]})
-    return {"texts": len(records), "texts_per_attribute": {a: texts[a] for a in ATTRIBUTES}, "entities_per_attribute": {a: entities[a] for a in ATTRIBUTES}, "sources": dict(Counter(r["source"] for r in records)), "negative_texts": sum(not r["entities"] for r in records)}
+    return {"texts": len(records), "texts_per_attribute": {a: texts[a] for a in attributes}, "entities_per_attribute": {a: entities[a] for a in attributes}, "sources": dict(Counter(r["source"] for r in records)), "negative_texts": sum(not r["entities"] for r in records)}
 
 
 def prepare(data_dir: Path, seed: int = 20261022, train_count: int = 1800, validation_count: int = 320, test_count: int = 480, synthetic_only: bool = False) -> dict:

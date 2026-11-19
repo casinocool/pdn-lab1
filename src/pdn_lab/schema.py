@@ -7,6 +7,10 @@ import re
 
 ATTRIBUTES = ("SURNAME", "NAME", "PATRONYMIC", "EMAIL", "INN", "PHONE", "CARD", "SNILS")
 NAME_ATTRIBUTES = ATTRIBUTES[:3]
+COURSE_ATTRIBUTES = ("SURNAME", "NAME", "INN", "PASSPORT", "CARD", "OGRNIP", "IP",
+                     "EMAIL", "BIRTH_CERT", "KLADR")
+ALL_ATTRIBUTES = tuple(dict.fromkeys(ATTRIBUTES + COURSE_ATTRIBUTES))
+PROFILES = {"lab": ATTRIBUTES, "course": COURSE_ATTRIBUTES, "all": ALL_ATTRIBUTES}
 BIO_LABELS = ("O",) + tuple(tag + "-" + label for label in ATTRIBUTES for tag in ("B", "I"))
 MODEL_LABELS = ("O",) + tuple(tag + "-" + label for label in NAME_ATTRIBUTES for tag in ("B", "I"))
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +41,7 @@ def tokenize(text: str) -> list[Token]:
 def validate_entities(text: str, entities: list[Entity]) -> None:
     previous_end = 0
     for entity in sorted(entities, key=lambda e: (e.start, e.end)):
-        if entity.label not in ATTRIBUTES:
+        if entity.label not in ALL_ATTRIBUTES:
             raise ValueError(f"Неизвестный атрибут: {entity.label}")
         if not 0 <= entity.start < entity.end <= len(text):
             raise ValueError(f"Некорректные позиции: {entity}")
@@ -77,7 +81,7 @@ def from_bio(tokens: list[Token], labels: list[str]) -> list[Entity]:
                 current = None
             continue
         prefix, label = tag.split("-", 1)
-        if prefix not in ("B", "I") or label not in ATTRIBUTES:
+        if prefix not in ("B", "I") or label not in ALL_ATTRIBUTES:
             raise ValueError(f"Некорректная BIO-метка: {tag}")
         if prefix == "I" and current is not None and current.label == label:
             current = Entity(label, current.start, token.end)

@@ -10,13 +10,14 @@ from .data import prepare, sha256
 from .detector import Detector
 from .metrics import evaluate_predictions, markdown_report
 from .model import NameModel, default_model_directory, default_data_directory
-from .schema import ATTRIBUTES, PROJECT_ROOT, read_jsonl, write_json
+from .schema import ATTRIBUTES, PROJECT_ROOT, PROFILES, read_jsonl, write_json
 
 
 def _detector(args) -> Detector:
+    profile = getattr(args, "profile", "lab")
     if args.rules_only:
-        return Detector(rules_only=True)
-    return Detector(NameModel.load(args.model_dir, args.device))
+        return Detector(rules_only=True, profile=profile)
+    return Detector(NameModel.load(args.model_dir, args.device), profile=profile)
 
 
 def run_evaluation(args) -> dict:
@@ -65,7 +66,7 @@ def main(argv=None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="ЛР 1: распознавание восьми атрибутов ПДн")
+    parser = argparse.ArgumentParser(description="Распознавание и синонимическое обезличивание ПДн")
     commands = parser.add_subparsers(dest="command", required=True)
     preparation = commands.add_parser("prepare", help="Подготовить factRuEval и синтетические train/validation/test")
     preparation.add_argument("--data-dir", type=Path, default=PROJECT_ROOT / "data")
@@ -94,11 +95,19 @@ def main(argv=None) -> int:
     evaluation.add_argument("--overwrite-report", action="store_true")
     evaluation.add_argument("--save-predictions", action="store_true")
     prediction = commands.add_parser("predict", help="Получить список [тип, начало, конец]")
-    inputs = prediction.add_mutually_exclusive_group(required=True)
-    inputs.add_argument("--text")
-    inputs.add_argument("--file", type=Path, help="Текстовый файл UTF-8; переводы строк сохраняются")
-    inputs.add_argument("--interactive", action="store_true")
-    for command in (evaluation, prediction):
+    anonymization = commands.add_parser("anonymize", help="Заменить ПДн и вернуть координаты в исходном тексте")
+    for command, default in ((prediction, "lab"), (anonymization, "all")):
+        inputs = command.add_mutually_exclusive_group(required=True)
+        inputs.add_argument("--text")
+        inputs.add_argument("--file", type=Path, help="Текстовый файл UTF-8; переводы строк сохраняются")
+        if command is prediction:
+            inputs.add_argument("--interactive", action="store_true")
+        command.add_argument("--profile", choices=PROFILES, default=default)
+    supplied = anonymization.add_mutually_exclusive_group()
+    supplied.add_argument("--spans", help="JSON из ЛР-1 вместо автоматического распознавания")
+    supplied.add_argument("--spans-file", type=Path, help="Файл UTF-8 с JSON из ЛР-1")
+    anonymization.add_argument("--method", choices=("synonym", "mask"), default="synonym")
+    for command in (evaluation, prediction, anonymization):
         command.add_argument("--model-dir", type=Path, default=default_model_directory())
         command.add_argument("--rules-only", action="store_true", help="Только диагностика правил, без распознавания ФИО")
         command.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
@@ -116,9 +125,9 @@ def main(argv=None) -> int:
             print(json.dumps({"weighted_f1_without_o": report["scores"]["token_weighted_f1_without_o"], "strict_entity_weighted_f1": report["scores"]["strict_entity_weighted_f1"], "requirements": report["requirements"], "lab_requirements_met_on_this_dataset": report["lab_requirements_met_on_this_dataset"], "report": str(args.output)}, ensure_ascii=False, indent=2))
             if not report["lab_requirements_met_on_this_dataset"]:
                 return 2
-        elif args.command == "predict":
-            detector = _detector(args)
-            if args.interactive:
+        elif args.command in ("predict", "anonymize"):
+            if getattr(args, "interactive", False):
+                detector = _detector(args)
                 print("Введите текст одной строкой. Завершение: Ctrl+Z, затем Enter (Windows) или Ctrl+D (Linux).", file=sys.stderr)
                 for line in sys.stdin:
                     print(json.dumps(detector.detect(line.rstrip("\r\n")), ensure_ascii=False), flush=True)
@@ -128,7 +137,20 @@ def main(argv=None) -> int:
                         text = stream.read()
                 else:
                     text = args.text
-                print(json.dumps(detector.detect(text), ensure_ascii=False))
+                if args.command == "predict":
+                    result = _detector(args).detect(text)
+                else:
+                    from .anonymization import anon, checked_spans, mask
+                    if args.spans_file:
+                        raw = json.loads(args.spans_file.read_text(encoding="utf-8-sig"))
+                    elif args.spans is not None:
+                        raw = json.loads(args.spans)
+                    else:
+                        raw = _detector(args).detect(text)
+                    spans = checked_spans(text, raw)
+                    transform = anon if args.method == "synonym" else mask
+                    result = {"text": transform(text, spans), "entities": [e.as_list() for e in spans]}
+                print(json.dumps(result, ensure_ascii=False))
         return 0
     except (OSError, ValueError, RuntimeError, ImportError) as error:
         print(f"Ошибка: {error}", file=sys.stderr)

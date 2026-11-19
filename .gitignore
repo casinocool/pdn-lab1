@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 pytest-cache-files-*/
 *.egg-info/
+build/
 .env
 .env.*
 !.env.example
@@ -13,6 +14,7 @@ pytest-cache-files-*/
 data/raw/
 data/processed/
 data/hard-v2/
+data/course-v2/
 data/stress-audited-v2/
 models/*
 !models/active.json
